@@ -7,6 +7,7 @@ It is an efficient and effective community detection algorithm that iteratively 
 Please email comments and suggestions to Mingming Chen via mileschen2008@gmail.com.
 
 
+
 References
 =================
 Mingming Chen, Konstantin Kuzmin, and Boleslaw Szymanski, "Community Detection via Maximization of Modularity and Its Variants", IEEE transactions on Computational Social Systems 1(1) Mar. 2014, pp. 46-65.
