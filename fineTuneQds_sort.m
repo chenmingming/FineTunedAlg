@@ -1,3 +1,5 @@
+%-06/03/2015-% Fixed the bug of using wrong Qds formula for directed
+%networks
 function [communities] = fineTuneQds_sort(net,revnet,totalEdge,totalWeight,isUndirected,communities)
     splitSize = 0;
     mergeSize = 0;
@@ -13,7 +15,7 @@ function [communities] = fineTuneQds_sort(net,revnet,totalEdge,totalWeight,isUnd
         splitSize = communities.size;
         
         %disp('merge:');
-        communities = mergeQds(net,totalEdge,totalWeight,communities);
+        communities = mergeQds(net,totalEdge,totalWeight,isUndirected,communities);
         mergeSize = communities.size;
     end
     
@@ -73,19 +75,33 @@ function [nodeCommunities communityWeights communityEdges communityDensities]=in
 end
 
 %-----------------------------------------------------------------------------------------------------------------------------------------------%
-function [Qdses] = getCommunityQds(communitySize,totalWeight,communityWeights,communityDensities)
+% Changed for directed networks
+function [Qdses] = getCommunityQds(communitySize,totalWeight,isUndirected,communityWeights,communityDensities)
     Qdses=zeros(communitySize,1);
     for i=0:communitySize-1
         wout=0;
+		wout_incoming=0;
         splitPenalty=0;
         for j=0:communitySize-1
             if j~=i
                 wout=wout+communityWeights(i+1,j+1);
+                %-06/03/2015-% Changed for directed networks
+                if ~isUndirected
+                    wout_incoming=wout_incoming+communityWeights(j+1,i+1);
+                end
                 splitPenalty=splitPenalty+(communityWeights(i+1,j+1)/totalWeight)*communityDensities(i+1,j+1);
             end
         end
-        Qds=(communityWeights(i+1,i+1)/totalWeight)*communityDensities(i+1,i+1)-...
-            (((communityWeights(i+1,i+1)+wout)/totalWeight)*communityDensities(i+1,i+1))^2-splitPenalty;
+        
+        %-06/03/2015-% Changed for directed networks
+        win=communityWeights(i+1,i+1);
+        inDensity=communityDensities(i+1,i+1);
+	    if isUndirected
+            Qds=(win/totalWeight)*inDensity-(((win+wout)/totalWeight)*inDensity)^2-splitPenalty;
+        else
+            Qds=(win/totalWeight)*inDensity-(((win+wout)*(win+wout_incoming))/(totalWeight^2))*(inDensity^2)-splitPenalty;
+        end
+        
         Qdses(i+1)=Qds;
     end
 end
@@ -208,7 +224,8 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
     [nodeCommunities communityWeights communityEdges communityDensities]=initial(net,totalEdge,totalWeight,communities);
     communitySize=communities.size;
     % O(k^2): Compute Modularity Density of each community
-    Qdses=getCommunityQds(communitySize,totalWeight,communityWeights,communityDensities);
+    %-06/03/2015-% Changed for directed networks
+    Qdses=getCommunityQds(communitySize,totalWeight,isUndirected,communityWeights,communityDensities);
     % The new communities after splitting
     obtainedCommunities=ArrayList;
     % O(m+kn+nlgn): To see whether it is necessary to split a community
@@ -235,11 +252,15 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
         oneWeights=zeros(communitySize+1,1);
 	    oneEdges=zeros(communitySize+1,1);
         % Get weight and density matrix for the second splitted community
+        % To Do (06/03/2015): Can use communityWeights and communityEdges
+        % to calculate twoWeights and twoEdges directely to save time
         [twoWeights twoEdges twoDensities]=getSplitCommunityInfo(net,communities,nodeCommunities,communitySize,splittedComTwo,0);
         % The change of Split Penalty of other communities for directed networks
 		if ~isUndirected
             revOneWeights=zeros(communitySize+1,1);
             revOneEdges=zeros(communitySize+1,1);
+            % To Do (06/03/2015): Can use communityWeights and communityEdges
+            % to calculate twoWeights and twoEdges directely to save time
 			[revTwoWeights revTwoEdges revTwoDensities]=getSplitCommunityInfo(revnet,communities,nodeCommunities,communitySize,splittedComTwo,0);
             %disp('initial');
             %disp(revTwoWeights');
@@ -269,6 +290,11 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
                     oneEdges(communityId)=oneEdges(communityId)+1;
                     twoWeights(communitySize+1)=twoWeights(communitySize+1)-weight;
                     twoEdges(communitySize+1)=twoEdges(communitySize+1)-1;
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        revOneWeights(communitySize+1)=revOneWeights(communitySize+1)-weight;
+                        revOneEdges(communitySize+1)=revOneEdges(communitySize+1)-1;
+                    end
                     if isUndirected
                         oneWeights(communityId)=oneWeights(communityId)+weight;
                         oneEdges(communityId)=oneEdges(communityId)+1;
@@ -280,6 +306,11 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
                     twoEdges(communityId)=twoEdges(communityId)-1;
                     oneWeights(communitySize+1)=oneWeights(communitySize+1)+weight;
                     oneEdges(communitySize+1)=oneEdges(communitySize+1)+1;
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        revTwoWeights(communitySize+1)=revTwoWeights(communitySize+1)+weight;
+                        revTwoEdges(communitySize+1)=revTwoEdges(communitySize+1)+1;
+                    end
                     if isUndirected
                         twoWeights(communityId)=twoWeights(communityId)-weight;
                         twoEdges(communityId)=twoEdges(communityId)-1;
@@ -309,11 +340,17 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
                         oneEdges(communityId)=oneEdges(communityId)+1;
                         oneWeights(communitySize+1)=oneWeights(communitySize+1)-weight;
                         oneEdges(communitySize+1)=oneEdges(communitySize+1)-1;
+                        %-06/03/2015-% Changed for directed networks
+                        revTwoWeights(communitySize+1)=revTwoWeights(communitySize+1)-weight;
+                        revTwoEdges(communitySize+1)=revTwoEdges(communitySize+1)-1;
                     elseif splittedComTwo.contains(nbId)
 				        twoWeights(communityId)=twoWeights(communityId)-weight;
                         twoEdges(communityId)=twoEdges(communityId)-1;
                         twoWeights(communitySize+1)=twoWeights(communitySize+1)+weight;
                         twoEdges(communitySize+1)=twoEdges(communitySize+1)+1;
+                        %-06/03/2015-% Changed for directed networks
+                        revOneWeights(communitySize+1)=revOneWeights(communitySize+1)+weight;
+                        revOneEdges(communitySize+1)=revOneEdges(communitySize+1)+1;
                     else
                         revOneWeights(nbComId)=revOneWeights(nbComId)+weight;
                         revOneEdges(nbComId)=revOneEdges(nbComId)+1;
@@ -323,10 +360,11 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
                 end
             end
             
-            % Compute the Modularity Density of first splitted community
+            % Compute the Modularity Density of the first splitted community
             oneWin=oneWeights(i+1);
             oneEin=oneEdges(i+1);
             oneWout=0;
+            oneWout_incoming=0;
             oneSplitPenalty=0;
             for k=1:communitySize+1
                 if (k-1)~=i
@@ -345,6 +383,10 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
                         sp=(oneWeights(k)/totalWeight)*interDensity;
                     end
                     oneWout=oneWout+oneWeights(k);
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        oneWout_incoming=oneWout_incoming+revOneWeights(k);
+                    end
                     oneSplitPenalty=oneSplitPenalty+sp;
                 end
             end
@@ -354,13 +396,19 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
             else
                 inDensity=oneEin/(oneComSize*(oneComSize-1));
             end
-            oneQds=(oneWin/totalWeight)*inDensity-(((oneWin+oneWout)/totalWeight)*inDensity)^2-oneSplitPenalty;
+            %-06/03/2015-% Changed for directed networks
+            if isUndirected
+                oneQds=(oneWin/totalWeight)*inDensity-(((oneWin+oneWout)/totalWeight)*inDensity)^2-oneSplitPenalty;
+            else
+                oneQds=(oneWin/totalWeight)*inDensity-(((oneWin+oneWout)*(oneWin+oneWout_incoming))/(totalWeight^2))*inDensity^2-oneSplitPenalty;
+            end
             sumQds=sumQds+oneQds;
             
-            % Compute the Modularity Density of first splitted community
+            % Compute the Modularity Density of the second splitted community
             twoWin=twoWeights(i+1);
             twoEin=twoEdges(i+1);
             twoWout=0;
+            twoWout_incoming=0;
             twoSplitPenalty=0;
             for k=1:communitySize+1
                 if (k-1)~=i
@@ -379,6 +427,10 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
                         sp=(twoWeights(k)/totalWeight)*interDensity;
                     end
                     twoWout=twoWout+twoWeights(k);
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        twoWout_incoming=twoWout_incoming+revTwoWeights(k);
+                    end
                     twoSplitPenalty=twoSplitPenalty+sp;
                 end
             end
@@ -388,7 +440,12 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
             else
                 inDensity=twoEin/(twoComSize*(twoComSize-1));
             end
-            twoQds=(twoWin/totalWeight)*inDensity-(((twoWin+twoWout)/totalWeight)*inDensity)^2-twoSplitPenalty;
+            %-06/03/2015-% Changed for directed networks
+            if isUndirected
+                twoQds=(twoWin/totalWeight)*inDensity-(((twoWin+twoWout)/totalWeight)*inDensity)^2-twoSplitPenalty;
+            else
+                twoQds=(twoWin/totalWeight)*inDensity-(((twoWin+twoWout)*(twoWin+twoWout_incoming))/(totalWeight^2))*inDensity^2-twoSplitPenalty;
+            end
             sumQds=sumQds+twoQds;
             
             % The change of Split Penalty of other communities for directed networks
@@ -482,13 +539,14 @@ function [obtainedCommunities] = splitQdsSort(net,revnet,totalEdge,totalWeight,i
 end
 
 %-------------------------------------------------------------------------------------------------------------------------%
-function [obtainedCommunities] = mergeQds(net,totalEdge,totalWeight,communities)
+function [obtainedCommunities] = mergeQds(net,totalEdge,totalWeight,isUndirected,communities)
     import java.util.*;
     % O(m): compute the weight, edge, and density matrix k*k
     [nodeCommunities communityWeights communityEdges communityDensities]=initial(net,totalEdge,totalWeight,communities);
     communitySize=communities.size;
     % O(k^2): Compute Modularity Density of each community
-    Qdses=getCommunityQds(communitySize,totalWeight,communityWeights,communityDensities);
+    %-06/03/2015-% Changed for directed networks
+    Qdses=getCommunityQds(communitySize,totalWeight,isUndirected,communityWeights,communityDensities);
     
     % O(k^3+k^2logk^2): Compute Modularity Density of two combined communities
     combinedCommunities=TreeMap;
@@ -505,6 +563,7 @@ function [obtainedCommunities] = mergeQds(net,totalEdge,totalWeight,communities)
 			jcomSize=communities.get(j).size;
 			csize=icomSize+jcomSize;
 			wout=0;
+            wout_incoming=0;
 			splitPenalty=0;
             
             for k=0:communitySize-1
@@ -519,6 +578,10 @@ function [obtainedCommunities] = mergeQds(net,totalEdge,totalWeight,communities)
 					
 					% The change of Split Penalty of other communities
 					if communityWeights(k+1,i+1)>0||communityWeights(k+1,j+1)>0
+                        %-06/03/2015-% Changed for directed networks
+                        if ~isUndirected
+                            wout_incoming=wout_incoming+communityWeights(k+1,i+1)+communityWeights(k+1,j+1);
+                        end
 						deltaQds=deltaQds-((communityWeights(k+1,i+1)+communityWeights(k+1,j+1))/totalWeight)*((communityEdges(k+1,i+1)+communityEdges(k+1,j+1))/(kcomSize*csize))...
 						    +(communityWeights(k+1,i+1)/totalWeight)*(communityEdges(k+1,i+1)/(kcomSize*icomSize))...
 							+(communityWeights(k+1,j+1)/totalWeight)*(communityEdges(k+1,j+1)/(kcomSize*jcomSize));
@@ -527,7 +590,12 @@ function [obtainedCommunities] = mergeQds(net,totalEdge,totalWeight,communities)
             end
             
             inDensity=ein/(csize*(csize-1));
-            Qds=(win/totalWeight)*inDensity-(((win + wout)/totalWeight)*inDensity)^2-splitPenalty;
+            %-06/03/2015-% Changed for directed networks
+            if isUndirected
+                Qds=(win/totalWeight)*inDensity-(((win + wout)/totalWeight)*inDensity)^2-splitPenalty;
+            else
+                Qds=(win/totalWeight)*inDensity-(((win + wout)*(win + wout_incoming))/(totalWeight^2))*inDensity^2-splitPenalty;
+            end
             %communities.get(i)
             %communities.get(j)
             %disp([deltaQds Qds Qdses(i+1) Qdses(j+1)]);

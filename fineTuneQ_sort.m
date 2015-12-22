@@ -1,3 +1,5 @@
+%-06/03/2015-% Fixed the bug of using wrong Q formula for directed
+%networks
 function [communities] = fineTuneQ_sort(net,revnet,totalWeight,isUndirected,communities)
     splitSize = 0;
     mergeSize = 0;
@@ -15,7 +17,7 @@ function [communities] = fineTuneQ_sort(net,revnet,totalWeight,isUndirected,comm
          splitSize = communities.size;
          
          % Merge
-         communities = mergeQ(net,totalWeight,communities);
+         communities = mergeQ(net,totalWeight,isUndirected,communities);
          mergeSize = communities.size;
      end
      
@@ -23,11 +25,18 @@ function [communities] = fineTuneQ_sort(net,revnet,totalWeight,isUndirected,comm
 end
 
 %---------------------------------------------------------------------------------------------------------------------------%
-function [nodeCommunities communityWeights wouts]=initial(net,totalWeight,communities)
+%-06/03/2015-% Changed for directed networks
+function [nodeCommunities communityWeights wouts wout_incomings]=initial(net,totalWeight,isUndirected,communities)
     import java.util.*;
     communitySize = communities.size;
     communityWeights=zeros(communitySize,communitySize);
 	wouts=zeros(communitySize,1);
+    %-06/03/2015-% Changed for directed networks
+    if ~isUndirected
+        wout_incomings=zeros(communitySize,1);
+    else
+        wout_incomings=0;
+    end
     nodeCommunities = HashMap;
     % Java ArrayList's index starts from 0
     for i=0:communitySize-1
@@ -59,6 +68,10 @@ function [nodeCommunities communityWeights wouts]=initial(net,totalWeight,commun
                 communityWeights(communityId,neighborComId)=communityWeights(communityId,neighborComId)+weight;
 				if communityId ~= neighborComId
 				    wouts(communityId)=wouts(communityId)+weight;
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        wout_incomings(neighborComId)=wout_incomings(neighborComId)+weight;
+                    end
 				end
             end % neighbor while
         end % node while
@@ -66,10 +79,16 @@ function [nodeCommunities communityWeights wouts]=initial(net,totalWeight,commun
 end
 
 %-----------------------------------------------------------------------------------------------------------------------------------------------%
-function [Qes] = getCommunityQ(communitySize,totalWeight,communityWeights,wouts)
+function [Qes] = getCommunityQ(communitySize,totalWeight,isUndirected,communityWeights,wouts,wout_incomings)
     Qes=zeros(communitySize,1);
     for i=0:communitySize-1
-        Q=communityWeights(i+1,i+1)/totalWeight-((communityWeights(i+1,i+1)+wouts(i+1))/totalWeight)^2;
+        %-06/03/2015-% Changed for directed networks
+        win=communityWeights(i+1,i+1);
+        if isUndirected
+            Q=win/totalWeight-((win+wouts(i+1))/totalWeight)^2;
+        else
+            Q=win/totalWeight-((win+wouts(i+1))*(win+wout_incomings(i+1)))/totalWeight^2;
+        end
         Qes(i+1)=Q;
     end
 end
@@ -147,10 +166,10 @@ end
 function [obtainedCommunities] = splitQSort(net,revnet,totalWeight,isUndirected,communities)
     import java.util.*;
     % O(m): compute the weight matrix k*k
-    [nodeCommunities communityWeights wouts]=initial(net,totalWeight,communities);
+    [nodeCommunities communityWeights wouts wout_incomings]=initial(net,totalWeight,isUndirected,communities);
     communitySize=communities.size;
     % O(k): Compute Q of each community
-    Qes=getCommunityQ(communitySize,totalWeight,communityWeights,wouts);
+    Qes=getCommunityQ(communitySize,totalWeight,isUndirected,communityWeights,wouts,wout_incomings);
     % The new communities after splitting
     obtainedCommunities=ArrayList;
     % O(m+n): To see whether it is necessary to split a community
@@ -175,6 +194,11 @@ function [obtainedCommunities] = splitQSort(net,revnet,totalWeight,isUndirected,
 		oneWout=0;
         twoWin=communityWeights(i+1,i+1);
 		twoWout=wouts(i+1);
+        %-06/03/2015-% Changed for directed networks
+        if ~isUndirected
+            oneWout_incoming=0;
+            twoWout_incoming=wout_incomings(i+1);
+        end
         
 		% Move 1 node to the first split community step by step, n-2 steps
 		for j=1:community.size-1
@@ -193,6 +217,10 @@ function [obtainedCommunities] = splitQSort(net,revnet,totalWeight,isUndirected,
 				if splittedComOne.contains(nbId)
 				    oneWin=oneWin+weight;
                     twoWout=twoWout-weight;
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        oneWout_incoming=oneWout_incoming-weight;
+                    end
                     if isUndirected
                         oneWin=oneWin+weight;
                         oneWout=oneWout-weight;
@@ -200,6 +228,10 @@ function [obtainedCommunities] = splitQSort(net,revnet,totalWeight,isUndirected,
                 elseif splittedComTwo.contains(nbId)
 				    twoWin=twoWin-weight;
                     oneWout=oneWout+weight;
+                    %-06/03/2015-% Changed for directed networks
+                    if ~isUndirected
+                        twoWout_incoming=twoWout_incoming+weight;
+                    end
                     if isUndirected
                         twoWin=twoWin-weight;
                         twoWout=twoWout+weight;
@@ -222,16 +254,30 @@ function [obtainedCommunities] = splitQSort(net,revnet,totalWeight,isUndirected,
 				    if splittedComOne.contains(nbId)
 				        oneWin=oneWin+weight;
                         oneWout=oneWout-weight;
+                        %-06/03/2015-% Changed for directed networks
+                        twoWout_incoming=twoWout_incoming-weight;
                     elseif splittedComTwo.contains(nbId)
 				        twoWin=twoWin-weight;
                         twoWout=twoWout+weight;
+                        %-06/03/2015-% Changed for directed networks
+                        oneWout_incoming=oneWout_incoming+weight;
+                    else
+                        %-06/03/2015-% Changed for directed networks
+                        oneWout_incoming=oneWout_incoming+weight;
+                        twoWout_incoming=twoWout_incoming-weight;
                     end
                 end
             end
             
             %disp([oneWin oneWout twoWin twoWout]);
-			oneQ=oneWin/totalWeight-((oneWin+oneWout)/totalWeight)^2;
-			twoQ=twoWin/totalWeight-((twoWin+twoWout)/totalWeight)^2;
+            %-06/03/2015-% Changed for directed networks
+            if isUndirected
+                oneQ=oneWin/totalWeight-((oneWin+oneWout)/totalWeight)^2;
+                twoQ=twoWin/totalWeight-((twoWin+twoWout)/totalWeight)^2;
+            else
+                oneQ=oneWin/totalWeight-((oneWin+oneWout)*(oneWin+oneWout_incoming))/totalWeight^2;
+                twoQ=twoWin/totalWeight-((twoWin+twoWout)*(twoWin+twoWout_incoming))/totalWeight^2;
+            end
 			sumQ=oneQ+twoQ;
             %disp([oneQ twoQ sumQ Qes(i+1)]);
 		    if sumQ>maxQ
@@ -310,13 +356,13 @@ function [obtainedCommunities] = splitQSort(net,revnet,totalWeight,isUndirected,
 end
 
 %-------------------------------------------------------------------------------------------------------------------------%
-function [obtainedCommunities] = mergeQ(net,totalWeight,communities)
+function [obtainedCommunities] = mergeQ(net,totalWeight,isUndirected,communities)
     import java.util.*;
     % O(m): compute the weight matrix k*k
-    [nodeCommunities communityWeights wouts]=initial(net,totalWeight,communities);
+    [nodeCommunities communityWeights wouts wout_incomings]=initial(net,totalWeight,isUndirected,communities);
     communitySize=communities.size;
     % O(k): Compute Q of each community
-    Qes=getCommunityQ(communitySize,totalWeight,communityWeights,wouts);
+    Qes=getCommunityQ(communitySize,totalWeight,isUndirected,communityWeights,wouts,wout_incomings);
     
     % O(k^2+k^2logk^2): Compute Q of two combined communities
     combinedCommunities=TreeMap;
@@ -328,7 +374,13 @@ function [obtainedCommunities] = mergeQ(net,totalWeight,communities)
             end
             win=communityWeights(i+1,i+1)+communityWeights(j+1,j+1)+communityWeights(i+1,j+1)+communityWeights(j+1,i+1);
 			wout=wouts(i+1)+wouts(j+1)-communityWeights(i+1,j+1)-communityWeights(j+1,i+1);
-            Q=win/totalWeight-((win + wout)/totalWeight)^2;
+            %-06/03/2015-% Changed for directed networks
+            if isUndirected
+                Q=win/totalWeight-((win + wout)/totalWeight)^2;
+            else
+                wout_incoming=wout_incomings(i+1)+wout_incomings(j+1)-communityWeights(i+1,j+1)-communityWeights(j+1,i+1);
+                Q=win/totalWeight-((win + wout)*(win+wout_incoming))/totalWeight^2;
+            end
             sumQ=Qes(i+1)+Qes(j+1);
             if Q>sumQ
                 increase=Q-sumQ;
